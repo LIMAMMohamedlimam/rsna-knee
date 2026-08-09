@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
 
-from src.data.dicom_reader import read_series_meta
+from src.data.dicom_reader import normalize_header_rows, read_series_meta
 from src.eda import figures, labels, reports, series, sites
 from src.eda.render import bullet_list, md_matrix, md_table, section
 from src.utils.config import cfg_path, config_hash
@@ -82,7 +82,7 @@ def sweep_study_headers(
     done: set[str] = set()
     existing = pd.DataFrame()
     if out_path.exists():
-        existing = pd.read_parquet(out_path)
+        existing = normalize_header_rows(pd.read_parquet(out_path))
         done = set(existing["StudyInstanceUID"].astype(str))
         log.info("resuming header sweep: %d studies already read", len(done))
 

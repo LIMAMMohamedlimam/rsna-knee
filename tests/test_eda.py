@@ -328,3 +328,30 @@ def test_low_patient_id_coverage_is_flagged_as_a_risk(eda_result):
     result, _, _ = eda_result
     assert result.scalars["pct_patient_id"] < 0.95
     assert any("cannot group by patient" in risk for risk in result.risks)
+
+
+def test_sweep_resumes_from_a_checkpoint_written_by_an_older_schema(tmp_path, synthetic):
+    """MagneticFieldStrength used to be stored numeric; concatenating that with the current
+    text form would fail the next parquet write and strand the whole sweep."""
+    from src.eda.pipeline import sweep_study_headers
+
+    raw = tmp_path / "raw"
+    synthetic.write_raw(raw)
+    write_synthetic_dicom_tree(synthetic, raw, n_studies=8)
+    out = tmp_path / "headers.parquet"
+
+    stale = pd.DataFrame([{
+        "StudyInstanceUID": synthetic.train["StudyInstanceUID"].iat[0],
+        "SeriesInstanceUID": "old", "n_files": 3, "n_read": 3, "rows": 256, "cols": 256,
+        "pixel_spacing_y": 0.31, "pixel_spacing_x": 0.31, "slice_thickness": 3.0,
+        "transfer_syntax": "1.2.840.10008.1.2.1", "mixed_shapes": False, "PatientID": "PAT00000",
+        "Manufacturer": "SIEMENS", "ManufacturerModelName": "Aera",
+        "MagneticFieldStrength": 1.5,          # numeric — the old schema
+        "ImplementationVersionName": None, "SoftwareVersions": None, "InstitutionName": None,
+        "error": None,
+    }])
+    stale.to_parquet(out, index=False)
+
+    swept = sweep_study_headers(raw, synthetic.series, out)   # must not raise
+    assert len(swept) == 8
+    assert swept["MagneticFieldStrength"].map(lambda v: v is None or isinstance(v, str)).all()

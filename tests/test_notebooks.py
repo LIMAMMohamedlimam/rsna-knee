@@ -87,3 +87,14 @@ def test_kaggle_notebook_runs_the_spec01_entrypoints_in_order():
     assert source.index("run_eda.py") < source.index("make_folds.py")
     # The data directory is discovered, not typed — that mistake already cost one run.
     assert "glob" in source and "train.csv" in source
+
+
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: p.name)
+def test_captured_subprocesses_check_their_exit_code(path):
+    """A `git pull` whose stderr and returncode are discarded reports success while leaving
+    stale code in place — that cost a full debugging cycle, so it is guarded here."""
+    source = code_source(load(path))
+    if "capture_output" not in source:
+        pytest.skip("notebook runs no captured subprocess")
+    assert "returncode" in source, "captured subprocess output without checking returncode"
+    assert "stderr" in source, "captured subprocess output without surfacing stderr"

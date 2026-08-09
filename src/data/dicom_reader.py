@@ -138,6 +138,33 @@ class SeriesMeta:
         }
 
 
+# Columns `to_row` guarantees to be text. Kept next to `to_row` so the two cannot drift.
+TEXT_COLUMNS = (
+    "StudyInstanceUID",
+    "SeriesInstanceUID",
+    "PatientID",
+    "transfer_syntax",
+    "error",
+    *FINGERPRINT_TAGS,
+)
+
+
+def normalize_header_rows(df):
+    """Re-coerce a header table to the `to_row` schema.
+
+    Applied when resuming a sweep: a checkpoint written by an earlier version may hold
+    numeric values where this one writes text (MagneticFieldStrength is the usual culprit),
+    and concatenating the two would fail the very next parquet write.
+    """
+    for column in TEXT_COLUMNS:
+        if column in df.columns:
+            df[column] = df[column].map(_as_text)
+    for column in ("pixel_spacing_y", "pixel_spacing_x", "slice_thickness"):
+        if column in df.columns:
+            df[column] = df[column].map(_as_float)
+    return df
+
+
 def list_series_files(series_dir: Path) -> list[Path]:
     """Sorted .dcm paths in a series directory (filename order — NOT slice order)."""
     return sorted(p for p in Path(series_dir).iterdir() if p.suffix.lower() == ".dcm")

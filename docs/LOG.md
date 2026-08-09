@@ -10,6 +10,13 @@ Append-only. One 5-line entry per task: date, what, config, result, next (CLAUDE
 - Result: 8 new tests, including a regression that writes rows from scanners with VM>1, VM=1 and an absent tag into one parquet, plus an invariant test that no `to_row()` value is ever a list.
 - Next: watch for the same class of surprise when Spec 03 reads pixel-level tags.
 
+**2026-08-09 — Fix: the notebook silently ran stale code**
+- What: the repo cell used `subprocess.run(..., capture_output=True)` and printed only `stdout`, so a failed `git pull` printed "Updating a..b" and hid its error on stderr; the session kept running the previous commit. Replaced with a `git()` helper that always surfaces stderr and raises on non-zero, plus `fetch` + `reset --hard` + `clean` (the Kaggle checkout is disposable, so a stray local edit must never block the update). The cell now prints HEAD next to a note to match it against the SHA in the run log.
+- Trigger: two consecutive `SoftwareVersions` failures against a fix that was already committed — the log line `git=23b30b8` versus the pushed `aec11cc` gave it away.
+- Also: `normalize_header_rows` re-coerces a resumed checkpoint to the current schema. A checkpoint written before the fix stores MagneticFieldStrength as a number where this version writes text, and concatenating the two would have reproduced the same ArrowInvalid on the next flush.
+- Result: 136 passing, including a resume-from-old-schema test and a notebook test asserting that any captured subprocess checks its exit code.
+- Next: Kaggle's writable disk is ~21 GB — the ~80 GB Spec 03 cache will not fit there, so plan that build in batches or elsewhere.
+
 **2026-08-09 — Fix: Kaggle was detected as Colab**
 - What: `in_colab()` no longer decides on module importability alone — the Kaggle image ships an importable `google.colab` shim. Detection is now `in_kaggle()` (KAGGLE_* env) first, then Colab env markers (COLAB_RELEASE_TAG / COLAB_GPU), and the module probe only as a last resort. `mount_drive` says so explicitly on Kaggle.
 - Trigger: `test_in_colab_is_false_here` failed on Kaggle. The test was wrong to assert an ambient environment fact, but it exposed a real latent bug: without `--no-mount`, the bootstrap would have hunted for a Drive that does not exist there.
