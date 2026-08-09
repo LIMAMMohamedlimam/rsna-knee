@@ -1,0 +1,55 @@
+# Base config. Experiment configs in configs/exp/ are merged ON TOP of this one.
+# Every path used anywhere comes from here (CLAUDE.md §6) — never hardcode /kaggle or /mnt.
+
+paths:
+  # Where the competition data lives (train.csv, train_series.csv, train_series/).
+  raw_dir: ${oc.env:RSNA_RAW,/data/rsna}
+
+  # Where everything we generate lives. Point RSNA_ARTIFACTS at fast local disk when
+  # throughput matters (training off the cache) and at Drive when persistence matters.
+  artifacts_root: ${oc.env:RSNA_ARTIFACTS,artifacts}
+
+  cache_dir: ${paths.artifacts_root}/cache
+  labels_dir: ${paths.artifacts_root}/labels
+  weights_dir: ${paths.artifacts_root}/weights
+  oof_dir: ${paths.artifacts_root}/oof
+  eda_dir: ${paths.artifacts_root}/eda
+  logs_dir: ${paths.artifacts_root}/logs
+  folds_path: ${paths.artifacts_root}/folds.parquet
+  study_meta_path: ${paths.artifacts_root}/eda/study_meta.parquet     # written by run_eda.py
+  study_headers_path: ${paths.artifacts_root}/eda/study_headers.parquet  # resumable header sweep
+
+  docs_dir: docs
+  figures_dir: docs/figures
+
+seed: 42
+n_folds: 5
+
+# Canonical order — validated against src/utils/constants.py:LABELS at load time (§3.6).
+labels: [ACL, MCL, Medial Meniscus, Lateral Meniscus, Medial OA, Lateral OA, PF OA, Effusion, Synovitis, Baker's, Contusion, Fracture]
+
+logging:
+  dir: ${paths.logs_dir}        # {script}_{run_id}.log + .jsonl sidecar per run
+  console_level: INFO           # override without editing: RSNA_LOG_LEVEL=DEBUG make eda
+  file_level: DEBUG
+  keep_runs: 50                 # older run logs are pruned at startup
+
+eda:
+  # Header sweep: read ONE header per study (a few KB each — this is not a 570 GB scan) to
+  # get PatientID for every study. Without it, fold grouping falls back to study level and a
+  # patient imaged twice can span two folds. Resumable: safe to interrupt and rerun.
+  patient_sweep: true
+  sweep_flush_every: 500        # checkpoint the sweep parquet this often
+
+  dicom_sample_series: 200      # pixel-stat sample, used when patient_sweep is false
+  rare_label_pos_rate_lo: 0.05  # flag threshold: "Rare/skewed labels"
+  rare_label_pos_rate_hi: 0.60
+  protocol_table_top_n: 6       # canonical protocol combos -> routing input for Spec 03
+  site_confound_ratio: 2.0      # flag clusters deviating >2x from global prevalence
+  min_cluster_size: 20          # smaller fingerprint clusters are pooled into "misc"
+  near_dup_min_chars: 40        # shorter reports are not clustered as near-duplicates
+
+folds:
+  group_by: auto                # auto -> PatientID when available, else StudyInstanceUID
+  min_patient_id_coverage: 0.95 # below this, fall back to study-level grouping
+  series_count_buckets: [1, 3, 5, 8]   # right edges for the proxy-vector bucket

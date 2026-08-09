@@ -1,0 +1,15 @@
+# artifacts are large and regenerated; folds.parquet is the one exception (CLAUDE.md §3.2)
+artifacts/*
+!artifacts/folds.parquet
+
+docs/figures/cache_qa/
+kaggle_assets/
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+wandb/
