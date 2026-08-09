@@ -118,8 +118,20 @@ def mount_drive() -> Path | None:
     return DRIVE_MOUNT
 
 
+def find_data_dirs(root: Path, max_depth: int = 3) -> list[Path]:
+    """Directories at or under `root` holding train.csv — bounded-depth globs only, never a
+    full walk. Duplicated from src/utils/io.py on purpose: this script must stay importable
+    before the project's dependencies exist."""
+    if not root.exists():
+        return []
+    found = [root] if (root / "train.csv").exists() else []
+    for depth in range(1, max_depth + 1):
+        found += [p.parent for p in root.glob("/".join(["*"] * depth) + "/train.csv")]
+    return sorted(set(found))
+
+
 def check_data_dir(raw_dir: Path) -> list[str]:
-    """Validate RSNA_RAW without walking the whole tree (that would be a Drive round trip
+    """Validate RSNA_RAW without walking the whole tree (that would be one Drive round trip
     per file). Checks only the two CSVs and that train_series/ exists."""
     problems = []
     if not raw_dir.exists():
@@ -129,8 +141,14 @@ def check_data_dir(raw_dir: Path) -> list[str]:
         if not (raw_dir / name).exists():
             problems.append(f"missing {name} in {raw_dir}")
 
-    series_root = raw_dir / "train_series"
-    if not series_root.exists():
+    if problems:
+        # Pointing one level too high is the usual cause (e.g. /kaggle/input/competitions).
+        candidates = [str(c) for c in find_data_dirs(raw_dir) if c != raw_dir]
+        problems.append(f"set RSNA_RAW to one of: {candidates}" if candidates else
+                        f"no train.csv anywhere under {raw_dir} — is the dataset attached?")
+        return problems
+
+    if not (raw_dir / "train_series").exists():
         problems.append(f"missing train_series/ in {raw_dir} "
                         f"(fine for Spec 01/02 label work; required from Spec 03)")
     return problems

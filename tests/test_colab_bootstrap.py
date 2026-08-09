@@ -98,14 +98,22 @@ def test_check_data_dir_reports_a_missing_directory(tmp_path):
     assert len(problems) == 1 and "does not exist" in problems[0]
 
 
-def test_check_data_dir_reports_missing_csvs_and_series(tmp_path, synthetic):
+def test_missing_csvs_short_circuit_the_train_series_check(tmp_path, synthetic):
+    """A missing CSV means RSNA_RAW is wrong, so also complaining about train_series/ would
+    bury the one message that matters."""
     raw = tmp_path / "raw"
     synthetic.write_raw(raw)
     (raw / "train.csv").unlink()
 
     problems = bootstrap.check_data_dir(raw)
     assert any("train.csv" in p for p in problems)
-    assert any("train_series/" in p for p in problems)
+    assert not any("train_series/" in p for p in problems)
+
+
+def test_missing_train_series_is_reported_when_the_csvs_are_present(tmp_path, synthetic):
+    raw = tmp_path / "raw"
+    synthetic.write_raw(raw)  # no train_series/ directory
+    assert any("train_series/" in p for p in bootstrap.check_data_dir(raw))
 
 
 def test_check_data_dir_does_not_walk_the_tree(tmp_path, synthetic, monkeypatch):
@@ -133,3 +141,19 @@ def test_missing_requirements_flags_only_absent_packages():
     assert bootstrap.missing_requirements(["a-package-that-does-not-exist>=1"]) == [
         "a-package-that-does-not-exist>=1"
     ]
+
+
+def test_check_data_dir_suggests_the_right_path_when_set_one_level_too_high(tmp_path, synthetic):
+    """The exact Kaggle failure: RSNA_RAW=/kaggle/input/competitions instead of .../<slug>."""
+    synthetic.write_raw(tmp_path / "competitions" / "rsna-knee-2026")
+
+    problems = bootstrap.check_data_dir(tmp_path / "competitions")
+    suggestion = [p for p in problems if p.startswith("set RSNA_RAW")]
+    assert suggestion, problems
+    assert str(tmp_path / "competitions" / "rsna-knee-2026") in suggestion[0]
+
+
+def test_check_data_dir_says_when_nothing_is_attached(tmp_path):
+    empty = tmp_path / "input"
+    empty.mkdir()
+    assert any("is the dataset attached?" in p for p in bootstrap.check_data_dir(empty))

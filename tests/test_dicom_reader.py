@@ -91,3 +91,74 @@ def test_list_series_files_ignores_non_dicom(tmp_path):
     (directory / "a.dcm").write_bytes(b"")
     (directory / "notes.txt").write_bytes(b"")
     assert [p.name for p in list_series_files(directory)] == ["a.dcm"]
+
+
+# --- parquet-safety of the flattened row --------------------------------------------------
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("MR 5.2", "MR 5.2"),
+        (["syngo MR E11", "VE11C"], "syngo MR E11\\VE11C"),   # VM>1: DICOM's own separator
+        ([], None),
+        ("", None),
+        (1.5, "1.5"),
+    ],
+)
+def test_as_text_flattens_multi_valued_tags(value, expected):
+    from src.data.dicom_reader import _as_text
+
+    assert _as_text(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, (None, None)), ([0.3, 0.4], (0.3, 0.4)), (0.5, (0.5, 0.5)), ([0.31], (0.31, 0.31))],
+)
+def test_as_float_pair_handles_every_pixel_spacing_shape(value, expected):
+    from src.data.dicom_reader import _as_float_pair
+
+    assert _as_float_pair(value) == expected
+
+
+def test_as_float_tolerates_junk():
+    from src.data.dicom_reader import _as_float, _as_int
+
+    assert _as_float("not a number") is None
+    assert _as_float(["3.0", "4.0"]) == 3.0
+    assert _as_int(256.0) == 256
+    assert _as_int(None) is None
+
+
+def test_to_row_never_contains_a_list(series_dir):
+    """Schema boundary: one scalar per column, or parquet fails mid-sweep."""
+    row = read_series_meta(series_dir).to_row()
+    offenders = {k: v for k, v in row.items() if isinstance(v, (list, tuple, dict))}
+    assert offenders == {}
+
+
+def test_sweep_rows_write_to_parquet_even_with_multi_valued_tags(tmp_path):
+    """Regression: SoftwareVersions is VM>1 on some scanners and VM=1 on others, which made
+    pyarrow reject the column part-way through a 4407-study sweep."""
+    import pandas as pd
+    import pydicom
+
+    rows = []
+    for i, versions in enumerate([["syngo MR E11", "VE11C"], "MR 5.2", None]):
+        directory = tmp_path / f"study{i}" / "series"
+        path = write_synthetic_dicom(directory / "0.dcm", "1.2.3", f"1.2.3.{i}", 0, "P", SITES[0])
+        ds = pydicom.dcmread(path)
+        if versions is None:
+            if "SoftwareVersions" in ds:
+                del ds["SoftwareVersions"]
+        else:
+            ds.SoftwareVersions = versions
+        ds.save_as(path, enforce_file_format=True)
+        rows.append(read_series_meta(directory).to_row())
+
+    frame = pd.DataFrame(rows)
+    out = tmp_path / "headers.parquet"
+    frame.to_parquet(out, index=False)          # must not raise
+
+    reloaded = pd.read_parquet(out)
+    assert reloaded["SoftwareVersions"].tolist() == ["syngo MR E11\\VE11C", "MR 5.2", None]

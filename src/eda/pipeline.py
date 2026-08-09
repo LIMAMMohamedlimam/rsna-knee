@@ -23,6 +23,7 @@ from src.eda.render import bullet_list, md_matrix, md_table, section
 from src.utils.config import cfg_path, config_hash
 from src.utils.constants import LABELS
 from src.utils.io import git_sha, resolve, write_parquet
+from src.utils.io import load_raw as io_load_raw
 
 # Below this fat-sat fluid study coverage, protocol incompleteness becomes a reported risk.
 PROTOCOL_COVERAGE_RISK_THRESHOLD = 0.90
@@ -38,13 +39,8 @@ class EdaResult:
     report_md: str = ""
 
 
-def load_raw(raw_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    train = pd.read_csv(raw_dir / "train.csv")
-    series_df = pd.read_csv(raw_dir / "train_series.csv")
-    missing = [c for c in LABELS if c not in train.columns]
-    if missing:
-        raise ValueError(f"train.csv is missing label columns: {missing}")
-    return train, series_df
+# Re-exported so the EDA keeps its own entry point for reading the competition CSVs.
+load_raw = io_load_raw
 
 
 def _first_series_per_study(series_df: pd.DataFrame) -> pd.DataFrame:
@@ -345,6 +341,8 @@ def _render(res: EdaResult, cfg: DictConfig) -> str:
         f"- config hash: `{config_hash(cfg)}`",
         f"- git sha: `{git_sha()}`",
         f"- seed: `{cfg.seed}`",
+        # Provenance: makes a report generated from a stand-in dataset obvious at a glance.
+        f"- data (`RSNA_RAW`): `{cfg_path(cfg, 'raw_dir')}`",
         f"- DICOM headers read: `{s.get('n_sampled_series', 0)}` "
         f"(source: {s.get('header_source', 'sample')}; PatientID coverage "
         f"{s.get('pct_patient_id', 0.0):.1%})",

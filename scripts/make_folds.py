@@ -25,7 +25,7 @@ from src.utils.folds import (  # noqa: E402
     build_study_frame,
     fold_prevalence_table,
 )
-from src.utils.io import file_hash, resolve, write_parquet  # noqa: E402
+from src.utils.io import file_hash, load_raw, resolve, write_parquet  # noqa: E402
 from src.utils.logging import log_dataframe, setup_logging  # noqa: E402
 from src.utils.seed import set_seed  # noqa: E402
 
@@ -53,8 +53,7 @@ def main() -> int:
 
         raw_dir = cfg_path(cfg, "raw_dir")
         with ctx.step("load_raw", raw_dir=str(raw_dir)):
-            train = pd.read_csv(raw_dir / "train.csv")
-            series_df = pd.read_csv(raw_dir / "train_series.csv")
+            train, series_df = load_raw(raw_dir)
         log_dataframe(ctx.log, "train.csv", train)
         log_dataframe(ctx.log, "train_series.csv", series_df)
 

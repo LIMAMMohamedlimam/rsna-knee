@@ -4,6 +4,24 @@ Append-only. One 5-line entry per task: date, what, config, result, next (CLAUDE
 
 ---
 
+**2026-08-09 — Fix: multi-valued DICOM tags broke the parquet checkpoint**
+- What: `SeriesMeta.to_row()` now flattens every value to a single scalar type — `_as_text` joins VM>1 tags on `\` (DICOM's own separator), `_as_float_pair` copes with PixelSpacing arriving as a pair, a scalar or absent, and all fingerprint columns are text (`MagneticFieldStrength` is numeric on most scanners and multi-valued on some).
+- Trigger: first real sweep died at the 500-study checkpoint — `ArrowInvalid: cannot mix list and non-list values` on `SoftwareVersions`. Progress up to the previous successful flush is preserved by design; here it failed on the first one, so nothing was lost but time.
+- Result: 8 new tests, including a regression that writes rows from scanners with VM>1, VM=1 and an absent tag into one parquet, plus an invariant test that no `to_row()` value is ever a list.
+- Next: watch for the same class of surprise when Spec 03 reads pixel-level tags.
+
+**2026-08-09 — Notebooks: ready-to-run Kaggle and Colab entry points**
+- What: `notebooks/kaggle_spec01.ipynb` (runs all of Spec 01 where the data is already local — auto-discovers `RSNA_RAW` by globbing for train.csv, so the container-directory mistake cannot recur; packages the outputs into one downloadable zip) and a corrected `notebooks/colab_setup.ipynb`.
+- Result: 6 tests in `tests/test_notebooks.py` — valid JSON, code cells parse as Python (magics/shell escapes stripped), no `!export` (a silent no-op in notebooks), env set before the bootstrap so its validation actually runs, and entrypoints in the right order.
+- Next: Spec 02 needs the model/endpoint/budget decisions before any code can run.
+
+**2026-08-09 — Fix: unhelpful failure when RSNA_RAW points one level too high**
+- What: `load_raw` moved to `src/utils/io.py` (so `make_folds` shares it) and now raises `RawDataNotFound` naming the directory that *does* contain train.csv, instead of a bare pandas `FileNotFoundError`. `colab_bootstrap.check_data_dir` makes the same suggestion, and short-circuits the `train_series/` complaint when the CSVs are missing. The EDA report header now records the resolved `RSNA_RAW`.
+- Trigger: a first Kaggle run with `RSNA_RAW=/kaggle/input/competitions` — a container directory, not the competition folder.
+- Result: 11 new tests in `tests/test_io.py` + 3 in `tests/test_colab_bootstrap.py`, including the exact `<root>/competitions/<slug>` layout. Verified by reproducing the failure locally.
+- Next: none.
+- Also removed `docs/eda_report.md` and 4 figures from git — they had been generated from the synthetic fixture during development and committed by mistake. `artifacts/folds.parquet` was correctly never committed.
+
 **2026-08-09 — Task 1.0b (added): Colab + Google Drive support**
 - What: `PY`/`PYTEST` indirection in the Makefile (`make eda PY=python` works without uv); `paths.artifacts_root` driven by `RSNA_ARTIFACTS` so every output can move to Drive or to fast local disk without editing configs; `scripts/colab_bootstrap.py` (mounts Drive, installs the pins read straight from `pyproject.toml`, validates `RSNA_RAW` in O(1) Drive round trips); `notebooks/colab_setup.ipynb`; and a **resumable header sweep** in `src/eda/pipeline.py` (`eda.patient_sweep`) that reads ONE header per study to recover `PatientID` for every study.
 - Config: `paths.artifacts_root`, `paths.study_headers_path`, `eda.patient_sweep=true`, `eda.sweep_flush_every=500`.

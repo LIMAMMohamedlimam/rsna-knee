@@ -52,6 +52,46 @@ def _is_numeric(value: Any) -> bool:
     return True
 
 
+def _as_text(value: Any) -> str | None:
+    """One string per cell. Multi-valued tags join on '\\', DICOM's own separator."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        joined = "\\".join(str(v) for v in value if v is not None)
+        return joined or None
+    text = str(value).strip()
+    return text or None
+
+
+def _as_float(value: Any) -> float | None:
+    """First numeric value, or None. Tolerates VM>1 (takes element 0) and junk."""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int(value: Any) -> int | None:
+    number = _as_float(value)
+    return None if number is None else int(number)
+
+
+def _as_float_pair(value: Any) -> tuple[float | None, float | None]:
+    """PixelSpacing is [row, col] — but may arrive as a single value or be absent."""
+    if value is None:
+        return None, None
+    if not isinstance(value, (list, tuple)):
+        single = _as_float(value)
+        return single, single
+    first = _as_float(value[0]) if len(value) > 0 else None
+    second = _as_float(value[1]) if len(value) > 1 else first
+    return first, second
+
+
 @dataclass
 class SeriesMeta:
     """Header-level facts about one series. Every field may be None."""
@@ -71,21 +111,29 @@ class SeriesMeta:
     error: str | None = None
 
     def to_row(self) -> dict[str, Any]:
-        ps = self.pixel_spacing or [None, None]
+        """Flatten to one parquet-safe row: every column gets a single scalar type.
+
+        Several allowlisted tags are VM>1 in real data (SoftwareVersions especially), so a
+        naive dump produces a column mixing lists and strings, which parquet rejects — and it
+        only shows up part-way through a long sweep.
+        """
+        y, x = _as_float_pair(self.pixel_spacing)
         return {
             "StudyInstanceUID": self.study_uid,
             "SeriesInstanceUID": self.series_uid,
             "n_files": self.n_files,
             "n_read": self.n_read,
-            "rows": self.rows,
-            "cols": self.cols,
-            "pixel_spacing_y": ps[0],
-            "pixel_spacing_x": ps[1] if len(ps) > 1 else None,
-            "slice_thickness": self.slice_thickness,
-            "transfer_syntax": self.transfer_syntax,
-            "mixed_shapes": self.mixed_shapes,
-            "PatientID": self.patient_id,
-            **{k: self.fingerprint.get(k) for k in FINGERPRINT_TAGS},
+            "rows": _as_int(self.rows),
+            "cols": _as_int(self.cols),
+            "pixel_spacing_y": y,
+            "pixel_spacing_x": x,
+            "slice_thickness": _as_float(self.slice_thickness),
+            "transfer_syntax": _as_text(self.transfer_syntax),
+            "mixed_shapes": bool(self.mixed_shapes),
+            "PatientID": _as_text(self.patient_id),
+            # Fingerprint fields are always text: MagneticFieldStrength is numeric in most
+            # studies but multi-valued in some, and every consumer stringifies it anyway.
+            **{k: _as_text(self.fingerprint.get(k)) for k in FINGERPRINT_TAGS},
             "error": self.error,
         }
 
