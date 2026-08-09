@@ -82,8 +82,39 @@ def test_has_module_returns_false_instead_of_raising_on_a_missing_parent():
     assert bootstrap.has_module("json") is True
 
 
-def test_in_colab_is_false_here():
+@pytest.fixture
+def clean_env(monkeypatch):
+    for name in ("KAGGLE_KERNEL_RUN_TYPE", "KAGGLE_URL_BASE", "COLAB_RELEASE_TAG", "COLAB_GPU"):
+        monkeypatch.delenv(name, raising=False)
+    return monkeypatch
+
+
+def test_colab_is_detected_from_its_environment_markers(clean_env):
+    clean_env.setenv("COLAB_RELEASE_TAG", "release-colab-20260801")
+    assert bootstrap.in_colab() is True
+    assert bootstrap.in_kaggle() is False
+
+
+def test_kaggle_is_detected_and_is_never_mistaken_for_colab(clean_env):
+    """The Kaggle image ships an importable `google.colab` shim, so a module check alone
+    claims Colab there and sends the bootstrap hunting for a Drive that does not exist."""
+    clean_env.setenv("KAGGLE_KERNEL_RUN_TYPE", "Interactive")
+    clean_env.setattr(bootstrap, "has_module", lambda name: True)
+
+    assert bootstrap.in_kaggle() is True
     assert bootstrap.in_colab() is False
+
+
+def test_kaggle_env_wins_over_colab_markers(clean_env):
+    clean_env.setenv("KAGGLE_URL_BASE", "https://www.kaggle.com")
+    clean_env.setenv("COLAB_RELEASE_TAG", "release-colab-20260801")
+    assert bootstrap.in_colab() is False
+
+
+def test_plain_machine_is_neither(clean_env):
+    clean_env.setattr(bootstrap, "has_module", lambda name: False)
+    assert bootstrap.in_colab() is False
+    assert bootstrap.in_kaggle() is False
 
 
 def test_check_data_dir_accepts_a_valid_layout(tmp_path, synthetic):

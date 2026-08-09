@@ -10,6 +10,12 @@ Append-only. One 5-line entry per task: date, what, config, result, next (CLAUDE
 - Result: 8 new tests, including a regression that writes rows from scanners with VM>1, VM=1 and an absent tag into one parquet, plus an invariant test that no `to_row()` value is ever a list.
 - Next: watch for the same class of surprise when Spec 03 reads pixel-level tags.
 
+**2026-08-09 — Fix: Kaggle was detected as Colab**
+- What: `in_colab()` no longer decides on module importability alone — the Kaggle image ships an importable `google.colab` shim. Detection is now `in_kaggle()` (KAGGLE_* env) first, then Colab env markers (COLAB_RELEASE_TAG / COLAB_GPU), and the module probe only as a last resort. `mount_drive` says so explicitly on Kaggle.
+- Trigger: `test_in_colab_is_false_here` failed on Kaggle. The test was wrong to assert an ambient environment fact, but it exposed a real latent bug: without `--no-mount`, the bootstrap would have hunted for a Drive that does not exist there.
+- Result: that test replaced by 4 that monkeypatch the environment and check the decision logic, including Kaggle winning over Colab markers. 133 passing.
+- Next: none.
+
 **2026-08-09 — Notebooks: ready-to-run Kaggle and Colab entry points**
 - What: `notebooks/kaggle_spec01.ipynb` (runs all of Spec 01 where the data is already local — auto-discovers `RSNA_RAW` by globbing for train.csv, so the container-directory mistake cannot recur; packages the outputs into one downloadable zip) and a corrected `notebooks/colab_setup.ipynb`.
 - Result: 6 tests in `tests/test_notebooks.py` — valid JSON, code cells parse as Python (magics/shell escapes stripped), no `!export` (a silent no-op in notebooks), env set before the bootstrap so its validation actually runs, and entrypoints in the right order.

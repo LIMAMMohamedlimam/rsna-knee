@@ -47,8 +47,22 @@ def has_module(name: str) -> bool:
         return False
 
 
+def in_kaggle() -> bool:
+    return bool(os.environ.get("KAGGLE_KERNEL_RUN_TYPE") or os.environ.get("KAGGLE_URL_BASE"))
+
+
 def in_colab() -> bool:
-    return has_module("google.colab")
+    """Detect a real Colab runtime.
+
+    Importability of `google.colab` is not enough: the Kaggle image ships a shim for it, so
+    a module check alone claims Colab on Kaggle and sends us looking for a Drive that is not
+    there. Environment markers are authoritative; the module check is the last resort.
+    """
+    if in_kaggle():
+        return False
+    if os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
+        return True
+    return has_module("google.colab.drive")
 
 
 def dist_to_module(name: str) -> str:
@@ -106,6 +120,9 @@ def install(requirements: list[str]) -> int:
 
 def mount_drive() -> Path | None:
     """Mount Google Drive if we are on Colab and it is not mounted yet."""
+    if in_kaggle():
+        print("running on Kaggle — the competition data is mounted locally, no Drive needed")
+        return None
     if not in_colab():
         print("not running on Colab — skipping Drive mount")
         return None
@@ -158,6 +175,7 @@ def describe_environment() -> dict[str, str]:
     info = {
         "python": sys.version.split()[0],
         "colab": str(in_colab()),
+        "kaggle": str(in_kaggle()),
         "cwd": os.getcwd(),
         "repo": str(REPO_ROOT),
         "RSNA_RAW": os.environ.get("RSNA_RAW", "<unset>"),
